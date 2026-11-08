@@ -102,6 +102,12 @@ For example \"/ssh:host:/var/lib/altero/storage/\".  It must end in a
 slash.  `zotxt-altero-mode' opens attachments from here."
   :type '(choice (const :tag "Not set" nil) directory))
 
+(defcustom zotxt-altero-local-storage-directory "~/Zotero/storage/"
+  "Zotero's own storage directory on this machine, or nil.
+Where a downloaded attachment is looked for when the library is read
+from a server's API, which gives no local paths."
+  :type '(choice (const :tag "None" nil) directory))
+
 (defcustom zotxt-altero-cache-directory
   (expand-file-name "zotxt-altero/" user-emacs-directory)
   "Directory for copies of attachments fetched from the altero server.
@@ -223,7 +229,15 @@ PARENT is nil for a standalone attachment."
                   ((and href (string-prefix-p "file://" href))
                    (url-unhex-string (url-filename (url-generic-parse-url href))))
                   ((equal (alist-get 'linkMode data) "linked_file")
-                   (alist-get 'path data))))))
+                   (alist-get 'path data))
+                  ;; A server's API does not know this machine's paths, but
+                  ;; Zotero keeps a downloaded file under its key.
+                  ((and zotxt-altero-local-storage-directory
+                        (alist-get 'filename data))
+                   (expand-file-name (alist-get 'filename data)
+                                     (expand-file-name
+                                      (alist-get 'key data)
+                                      zotxt-altero-local-storage-directory)))))))
 
 (defun zotxt-altero--read-attachments ()
   "Read every attachment with a file in the library."

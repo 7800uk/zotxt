@@ -85,11 +85,18 @@ installed (EμReader fetches and caches it), and anything else is copied into
 `zotxt-altero-cache-directory` first. Web snapshots, which Zotero uploads zipped, are
 unpacked there.
 
-A file has a digest in Zotero once Zotero has synced or downloaded it. To use the
-server's own record instead, point `zotxt-altero-api-url` at its API, e.g.
-`https://altero.example/users/12345/`, with the key in `~/.authinfo`:
+Zotero's local API gives an attachment's digest only for a file Zotero has itself synced
+through Zotero storage, which with file sync over WebDAV, or after linking a new account, may be
+none of them. The server's API knows every digest, so point `zotxt-altero-api-url` at it,
+e.g. `https://altero.example/users/12345/`, with a read-only key in `~/.authinfo`:
 
     machine altero.example login 12345 password KEY
+
+A read from a server gives no local paths; a file Zotero has downloaded is still found under
+`zotxt-altero-local-storage-directory`, `~/Zotero/storage/` by default.
+
+If the login shell on the server is not a POSIX shell (nushell, fish), TRAMP's `ssh` method
+waits on it for a prompt; use `sshx`, as in `/sshx:host:/var/lib/altero/storage/`.
 
 # The browser
 
