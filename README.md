@@ -119,6 +119,12 @@ components, one tree per buffer, all drawn from one state, so it needs vui as we
 `zotxt-browser-item-columns` chooses the columns; a column of width `nil`, the title by
 default, takes what the window leaves.
 
+Item types and fold arrows are drawn with [all-the-icons](https://github.com/domtronn/all-the-icons.el)
+when it is installed and the frame is graphical, and with plain symbols otherwise
+(`zotxt-browser-icons`, `zotxt-browser-type-icons`). Columns line up only when every icon
+is exactly one character cell wide, which upstream's are not; the
+[7800uk/all-the-icons](https://gitlab.7800.io/7800uk/all-the-icons) fork sizes them so.
+
 # Development
 
 `make compile` byte-compiles every file with warnings as errors, and `make checkdoc`

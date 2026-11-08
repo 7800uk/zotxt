@@ -81,7 +81,11 @@ of nil takes what the window leaves of its width, and at least 20."
   :type '(cons symbol boolean))
 
 (defcustom zotxt-browser-icons t
-  "Whether to show a mark for the type of each item."
+  "Whether to show a mark for the type of each item.
+The mark is an icon of all-the-icons when that is installed and the
+frame is graphical, and a symbol otherwise.  Icons line up with the
+columns when they are sized to whole cells, as the 7800uk fork of
+all-the-icons sizes them."
   :type 'boolean)
 
 (defcustom zotxt-browser-libraries-buffer-name "*Zotxt Libraries*"
@@ -238,17 +242,95 @@ With REFRESH non-nil, read it regardless.  Return its data."
     (if (string-empty-p text) "(empty note)"
       (truncate-string-to-width text 80))))
 
+(defcustom zotxt-browser-type-icons
+  '(("book" "book" all-the-icons-dyellow)
+    ("bookSection" "bookmark" all-the-icons-yellow)
+    ("journalArticle" "file-text-o" all-the-icons-lblue)
+    ("magazineArticle" "newspaper-o" all-the-icons-blue)
+    ("newspaperArticle" "newspaper-o" all-the-icons-blue)
+    ("encyclopediaArticle" "university" all-the-icons-cyan)
+    ("dictionaryEntry" "university" all-the-icons-cyan)
+    ("thesis" "graduation-cap" all-the-icons-purple)
+    ("conferencePaper" "users" all-the-icons-lblue)
+    ("report" "file-o" all-the-icons-silver)
+    ("manuscript" "pencil" all-the-icons-orange)
+    ("letter" "envelope-o" all-the-icons-orange)
+    ("email" "envelope-o" all-the-icons-orange)
+    ("webpage" "globe" all-the-icons-green)
+    ("blogPost" "rss" all-the-icons-green)
+    ("forumPost" "comments-o" all-the-icons-green)
+    ("videoRecording" "film" all-the-icons-red)
+    ("film" "film" all-the-icons-red)
+    ("audioRecording" "headphones" all-the-icons-red)
+    ("podcast" "podcast" all-the-icons-red)
+    ("computerProgram" "code" all-the-icons-purple)
+    ("presentation" "television" all-the-icons-orange)
+    ("note" "sticky-note-o" all-the-icons-yellow))
+  "Font Awesome icons for Zotero item types, as (TYPE ICON FACE).
+Used when all-the-icons is installed and the frame can show it; a type
+not listed gets a plain file.  Attachments get the icon of their file."
+  :type '(repeat (list string string face)))
+
+(defun zotxt-browser--icons-p ()
+  "Non-nil if marks are all-the-icons icons rather than symbols."
+  (and zotxt-browser-icons (display-graphic-p)
+       (require 'all-the-icons nil t)))
+
+(defun zotxt-browser--mark-width ()
+  "Return the columns a mark takes, with the space after it."
+  (if (not zotxt-browser-icons) 0
+    (1+ (or (and (zotxt-browser--icons-p)
+                 (bound-and-true-p all-the-icons-cell-width))
+            1))))
+
+(declare-function all-the-icons-faicon "all-the-icons" (icon-name &rest args))
+(declare-function all-the-icons-icon-for-file "all-the-icons" (file &rest args))
+
+(defun zotxt-browser--icon (object)
+  "Return the all-the-icons icon for the type of the item OBJECT."
+  (let* ((data (alist-get 'data object))
+         (type (alist-get 'itemType data)))
+    (if (equal type "attachment")
+        (let ((content (or (alist-get 'contentType data) "")))
+          (cond ((equal (alist-get 'linkMode data) "linked_url")
+                 (all-the-icons-faicon "link" :face 'all-the-icons-blue))
+                ((string-prefix-p "text/html" content)
+                 (all-the-icons-faicon "globe" :face 'all-the-icons-green))
+                (t (all-the-icons-icon-for-file
+                    (or (alist-get 'filename data) (alist-get 'title data) "file")))))
+      (pcase-let ((`(,icon ,face) (cdr (assoc type zotxt-browser-type-icons))))
+        (all-the-icons-faicon (or icon "file-o")
+                              :face (or face 'all-the-icons-silver))))))
+
+(declare-function all-the-icons-octicon "all-the-icons" (icon-name &rest args))
+
+(defun zotxt-browser--fold (fold)
+  "Return the two columns showing FOLD: `open', `closed' or nil.
+An arrow of all-the-icons where icons are shown, so that it is one cell
+wide like the icons; otherwise a symbol."
+  (pcase fold
+    ('nil "  ")
+    (_ (concat (if (zotxt-browser--icons-p)
+                   (all-the-icons-octicon (if (eq fold 'open) "triangle-down"
+                                            "triangle-right")
+                                          :face 'all-the-icons-silver)
+                 (if (eq fold 'open) "▾" "▸"))
+               " "))))
+
 (defun zotxt-browser--mark (object)
-  "Return the mark shown for the type of the item OBJECT."
-  (let ((data (alist-get 'data object)))
-    (pcase (alist-get 'itemType data)
-      ("note" "✎")
-      ("attachment" (pcase (alist-get 'contentType data)
-                      ("application/pdf" "⎙")
-                      ((pred (lambda (type) (and type (string-prefix-p "text/html" type)))) "◎")
-                      (_ "▫")))
-      ((or "book" "bookSection") "▤")
-      (_ "▪"))))
+  "Return the mark shown for the type of the item OBJECT.
+An all-the-icons icon where it can be shown, otherwise a symbol."
+  (if (zotxt-browser--icons-p)
+      (zotxt-browser--icon object)
+    (let ((data (alist-get 'data object)))
+      (pcase (alist-get 'itemType data)
+        ("note" "✎")
+        ("attachment" (pcase (alist-get 'contentType data)
+                        ("application/pdf" "⎙")
+                        ((pred (lambda (type) (and type (string-prefix-p "text/html" type)))) "◎")
+                        (_ "▫")))
+        ((or "book" "bookSection") "▤")
+        (_ "▪")))))
 
 (defun zotxt-browser--deleted-p (object)
   "Non-nil if the item OBJECT is in the bin."
@@ -383,7 +465,7 @@ nil.  :item is the key of the item shown in the item pane.")
    :key key
    :face (and selected 'zotxt-browser-selected)
    (vui-text (concat " " (make-string (* 2 level) ?\s)
-                     (pcase fold ('open "▾ ") ('closed "▸ ") (_ "  "))
+                     (zotxt-browser--fold fold)
                      label))))
 
 (defun zotxt-browser--collection-rows (parent level open current)
@@ -421,7 +503,7 @@ OPEN are the unfolded collections, CURRENT the one shown."
 A column of no width takes what the items window leaves."
   (let* ((window (get-buffer-window zotxt-browser-items-buffer-name t))
          (total (if window (window-body-width window) 100))
-         (fixed (+ 4 (if zotxt-browser-icons 2 0)
+         (fixed (+ 4 (zotxt-browser--mark-width)
                    (1- (length zotxt-browser-item-columns))
                    (apply #'+ (mapcar (lambda (c) (or (cdr c) 0))
                                       zotxt-browser-item-columns)))))
@@ -435,7 +517,7 @@ COLUMNS are as `zotxt-browser--columns' returns them."
     (concat
      " "
      (make-string (* 2 level) ?\s)
-     (pcase fold ('open "▾ ") ('closed "▸ ") (_ "  "))
+     (zotxt-browser--fold fold)
      (if zotxt-browser-icons (concat (zotxt-browser--mark object) " ") "")
      (mapconcat
       (lambda (column)
@@ -460,7 +542,7 @@ COLUMNS are as `zotxt-browser--columns' returns them."
   (let ((first t))
     (vui-hstack
      :spacing 0
-     (vui-text (concat " " (make-string (if zotxt-browser-icons 4 2) ?\s))
+     (vui-text (concat " " (make-string (+ 2 (zotxt-browser--mark-width)) ?\s))
                :face 'zotxt-browser-header)
      (mapcar
       (lambda (column)
