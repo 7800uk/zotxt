@@ -6,7 +6,7 @@ EMACS ?= emacs
 # build directory by default.
 DEPS ?= $(HOME)/.emacs.d/straight/build
 LOAD_PATH = -L . $(patsubst %,-L %,$(wildcard $(DEPS)/*))
-SRCS = zotxt.el org-zotxt.el org-zotxt-noter.el zotxt-altero.el
+SRCS = zotxt.el org-zotxt.el org-zotxt-noter.el zotxt-altero.el zotxt-browser.el
 
 test:
 	$(MAKE) -C casks/$(CASK) test

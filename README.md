@@ -91,6 +91,34 @@ server's own record instead, point `zotxt-altero-api-url` at its API, e.g.
 
     machine altero.example login 12345 password KEY
 
+# The browser
+
+`zotxt-browser.el` lays the library out the way Zotero does, and the way
+[emacs-zotero](https://github.com/emacsmirror/zotero)'s `zotero-browser` does: libraries at
+the top left, the collections of the library below them, the items of the collection in the
+middle as a tree with their attachments and notes folded under them, and the item at point on
+the right. It reads the library from Zotero's local API, as `zotxt-altero` does, and is
+read-only, as that API is. Its panes are [vui.el](https://github.com/d12frosted/vui.el)
+components, one tree per buffer, all drawn from one state, so it needs vui as well.
+
+`M-x zotxt-browser` opens it. The keys are `zotero-browser`'s, less the ones that edit:
+
+| Key | | Key | |
+|-----|-|-----|-|
+| `RET` | open the attachment or note, or show the item | `e` | show the item |
+| `TAB` | fold or unfold | `S-TAB` | fold or unfold all |
+| `$` / `M-$` | unfold / fold all | `u` | up to the parent |
+| `n` / `p` | next / previous row | `C-c C-f` / `C-c C-b` | next / previous sibling |
+| `C-c C-n` / `C-c C-p` | next / previous collection | `C-c C-u` | up a collection |
+| `a` / `U` / `B` | all items / unfiled / bin | `s` | sort (or click a column) |
+| `/` | filter by title, creator or year | `o` | open the attachment |
+| `w` | copy an Org `zotero:` link | `k` | copy the citekey |
+| `z` | select in Zotero | `A` | toggle `zotxt-altero-mode` |
+| `g` | read the library again | `q` | close the browser |
+
+`zotxt-browser-item-columns` chooses the columns; a column of width `nil`, the title by
+default, takes what the window leaves.
+
 # Development
 
 `make compile` byte-compiles every file with warnings as errors, and `make checkdoc`

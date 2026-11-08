@@ -194,6 +194,10 @@ headers, with lower-case names."
 (defvar zotxt-altero--cache nil
   "The attachments last read, as a cons of library version and list.")
 
+(defun zotxt-altero--clean (string)
+  "Return STRING without the bidi isolates Zotero puts around names."
+  (and string (replace-regexp-in-string "[\u2066-\u2069]" "" string)))
+
 (defun zotxt-altero--year (meta)
   "Return the year in the item META's parsed date, or nil."
   (when-let* ((date (alist-get 'parsedDate meta)))
@@ -208,7 +212,8 @@ PARENT is nil for a standalone attachment."
     (list :key (alist-get 'key data)
           :parent (alist-get 'key (alist-get 'data owner))
           :title (or (alist-get 'title (alist-get 'data owner)) "")
-          :creators (alist-get 'creatorSummary (alist-get 'meta owner))
+          :creators (zotxt-altero--clean
+                    (alist-get 'creatorSummary (alist-get 'meta owner)))
           :year (zotxt-altero--year (alist-get 'meta owner))
           :filename (or (alist-get 'filename data) (alist-get 'title data))
           :md5 (alist-get 'md5 data)
