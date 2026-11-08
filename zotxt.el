@@ -441,7 +441,10 @@ not be returned."
               (deferred:$
                 (zotxt--request-deferred
                  (format "%s/complete" zotxt-url-base)
-                 :params `(("citekey" . ,key))
+                 ;; The addon has asked for `prefix' since its rewrite for
+                 ;; Zotero 7, and answers 400 without it; older versions
+                 ;; read `citekey'.  Each ignores the other.
+                 :params `(("prefix" . ,key) ("citekey" . ,key))
                  :parser #'zotxt--json-read)
                 (deferred:nextc it
                   (lambda (response)

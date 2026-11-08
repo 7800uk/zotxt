@@ -64,6 +64,7 @@
 (require 'zotxt)
 
 (declare-function emureader-open-doc "emureader" (document &optional name))
+(declare-function emureader-find-doc-noselect "emureader" (document &optional name))
 (declare-function org-noter "org-noter" (&optional arg))
 (declare-function org-zotxt-extract-link-id-at-point "org-zotxt" ())
 (declare-function org-zotxt-make-item-link "org-zotxt" (item))
@@ -72,6 +73,7 @@
 (declare-function org-entry-get "org" (pom property &optional inherit literal-nil))
 (defvar emureader-supported-formats)
 (defvar org-noter-property-doc-file)
+(defvar org-noter-open-document-functions)
 (defvar org-zotxt-noter-zotero-link)
 (defvar org-zotxt-link-description-style)
 (defvar url-http-end-of-headers)
@@ -429,8 +431,27 @@ passed on to `org-noter'."
     (let ((attachment (zotxt-altero-read-attachment "Take notes on: ")))
       (org-entry-put nil org-noter-property-doc-file
                      (zotxt-altero-attachment-file attachment))
-      (org-entry-put nil "ZOTERO_LINK" (zotxt-altero--item-link attachment))))
+      (org-entry-put nil org-zotxt-noter-zotero-link
+                     (zotxt-altero--item-link attachment))))
   (org-noter arg))
+
+(defun zotxt-altero--noter-document (document)
+  "Return a buffer showing DOCUMENT under its attachment's own name.
+For `org-noter-open-document-functions': DOCUMENT is a file on the
+altero server, whose name is a bare digest, so its name in the
+library is looked up and EμReader is given it.  Return nil for any
+other document, or when Zotero cannot say, and org-noter opens it
+itself."
+  (when-let* (((stringp document))
+              (dir zotxt-altero-storage-directory)
+              ((string-prefix-p (file-name-as-directory dir) document))
+              (md5 (file-name-nondirectory document))
+              (attachment (ignore-errors
+                            (seq-find (lambda (a) (equal (plist-get a :md5) md5))
+                                      (zotxt-altero-attachments))))
+              (name (plist-get attachment :filename))
+              ((zotxt-altero--emureader-p name)))
+    (emureader-find-doc-noselect document name)))
 
 ;;;; altero mode
 
@@ -476,7 +497,8 @@ While this mode is on, `zotxt-consult-attachment',
 `zotxt-consult-noter', `org-zotxt-open-attachment' and
 `org-zotxt-noter' take attachments from
 `zotxt-altero-storage-directory' rather than the local Zotero storage,
-so a file Zotero has not downloaded still opens."
+so a file Zotero has not downloaded still opens.  org-noter opens such
+a document under its own name."
   :global t
   :lighter " Altero"
   :group 'zotxt-altero
@@ -488,9 +510,13 @@ so a file Zotero has not downloaded still opens."
         (advice-add 'org-zotxt-open-attachment :around
                     #'zotxt-altero--open-attachment)
         (advice-add 'org-zotxt-choose-path :filter-return
-                    #'zotxt-altero--choose-path))
+                    #'zotxt-altero--choose-path)
+        (add-hook 'org-noter-open-document-functions
+                  #'zotxt-altero--noter-document))
     (advice-remove 'org-zotxt-open-attachment #'zotxt-altero--open-attachment)
-    (advice-remove 'org-zotxt-choose-path #'zotxt-altero--choose-path)))
+    (advice-remove 'org-zotxt-choose-path #'zotxt-altero--choose-path)
+    (remove-hook 'org-noter-open-document-functions
+                 #'zotxt-altero--noter-document)))
 
 (provide 'zotxt-altero)
 ;;; zotxt-altero.el ends here

@@ -241,8 +241,8 @@ With no argument, this command toggles the mode.
 Non-null prefix argument turns on the mode.
 Null prefix argument turns off the mode.
 
-This is a minor mode for managing your citations with Zotero in a
-org-mode document."
+This is a minor mode for managing your citations with Zotero in an
+Org document."
   :init-value nil
   :lighter " OrgZot"
   :keymap org-zotxt-mode-map
