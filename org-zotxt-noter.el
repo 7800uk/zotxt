@@ -1,9 +1,10 @@
-;; -*- lexical-binding: t -*-
-;;; org-zotxt-noter.el --- Zotxt support for org-noter
+;;; org-zotxt-noter.el --- Zotxt support for org-noter  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2010-2020 Erik Hetzner
 
 ;; Author: Erik Hetzner <egh@e6h.org>
+;; Maintainer: Jacob Walchuk <git@7800.io>
+;; URL: https://gitlab.7800.io/7800uk/zotxt
 ;; Keywords: bib
 
 ;; This file is not part of GNU Emacs.
@@ -19,15 +20,19 @@
 ;; General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with org-zotxt.el. If not, see
+;; along with org-zotxt-noter.el. If not, see
 ;; <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
+;; `org-zotxt-noter' starts an org-noter session on an attachment
+;; chosen from Zotero.
 
 ;;; Code:
 
 (require 'deferred)
 (require 'org-noter)
+(require 'org-zotxt)
 
 (defun org-zotxt-noter (arg)
   "Like `org-noter', but use Zotero.
@@ -50,7 +55,7 @@ See `org-noter' for details and ARG usage."
          (document-path (when (stringp document-property) (expand-file-name document-property))))
     (if (and document-path (not (file-directory-p document-path)) (file-readable-p document-path))
         (call-interactively #'org-noter)
-      (let ((arg arg))
+      (let ((heading (point-marker)))
         (deferred:$
           (zotxt-choose-deferred)
           (deferred:nextc it
@@ -61,10 +66,18 @@ See `org-noter' for details and ARG usage."
               (org-zotxt-get-item-link-text-deferred item)))
           (deferred:nextc it
             (lambda (resp)
-              (let ((path (org-zotxt-choose-path (cdr (assq 'paths (plist-get resp :paths))))))
-                (org-entry-put nil org-zotxt-noter-zotero-link (org-zotxt-make-item-link resp))
-                (org-entry-put nil org-noter-property-doc-file path))
-              (call-interactively #'org-noter)))
+              ;; The answer arrives later, in whatever buffer is current
+              ;; then: go back to the heading the command was given in.
+              (with-current-buffer (marker-buffer heading)
+                (save-excursion
+                  (goto-char heading)
+                  (let ((path (org-zotxt-choose-path
+                               (cdr (assq 'paths (plist-get resp :paths))))))
+                    (org-entry-put nil org-zotxt-noter-zotero-link
+                                   (org-zotxt-make-item-link resp))
+                    (org-entry-put nil org-noter-property-doc-file path)))
+                (goto-char heading)
+                (call-interactively #'org-noter))))
           (deferred:error it #'zotxt--deferred-handle-error))))))
 
 (provide 'org-zotxt-noter)

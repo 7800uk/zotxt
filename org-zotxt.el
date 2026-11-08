@@ -1,9 +1,10 @@
-;; -*- lexical-binding: t -*-
-;;; org-zotxt.el --- Interface org-mode with Zotero via the zotxt extension
+;;; org-zotxt.el --- Interface org-mode with Zotero via the zotxt extension  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2010-2020 Erik Hetzner
 
 ;; Author: Erik Hetzner <egh@e6h.org>
+;; Maintainer: Jacob Walchuk <git@7800.io>
+;; URL: https://gitlab.7800.io/7800uk/zotxt
 ;; Keywords: bib
 
 ;; This file is not part of GNU Emacs.
@@ -24,8 +25,13 @@
 
 ;;; Commentary:
 
+;; `org-zotxt-mode' inserts and updates zotero: links to items in a
+;; running Zotero, and opens their attachments.
+
 ;;; Code:
 
+(require 'cl-lib)
+(require 'ol)
 (require 'org-element)
 (require 'zotxt)
 (require 'deferred)
@@ -66,7 +72,7 @@ See `org-zotxt-insert-reference-link'."
 
 (defun org-zotxt-make-item-link (item)
   "Return an Org mode link for ITEM as a string."
-  (org-make-link-string
+  (org-link-make-string
    (format "zotero://select/items/%s"
            (plist-get item :key))
    (cl-case org-zotxt-link-description-style
@@ -118,7 +124,7 @@ See `org-zotxt-insert-reference-link'."
   (save-excursion
     (widen)
     (goto-char (point-max))
-    (while (re-search-backward org-any-link-re nil t)
+    (while (re-search-backward org-link-any-re nil t)
       (let* ((parse (org-element-link-parser))
              (path (org-element-property :path parse)))
         (when (org-zotxt-extract-link-id-from-path path)
@@ -146,9 +152,7 @@ will insert the currently selected item from Zotero.  If double
 prefix argument is used the search method will have to be
 selected even if `org-zotxt-default-search-method' is non-nil"
   (interactive "p")
-  (let ((mk (point-marker))
-        (use-current-selected (equal '(4) arg))
-        (force-choose-search-method (equal '(16) arg)))
+  (let ((mk (point-marker)))
     (deferred:$
       (zotxt-choose-deferred arg)
       (deferred:nextc it
@@ -168,7 +172,7 @@ selected even if `org-zotxt-default-search-method' is non-nil"
   "Function used for zotero links to follow the link to PATH."
   (zotxt-select-key (substring path 15)))
 
-(defun org-zotxt--link-export (path desc format)
+(defun org-zotxt--link-export (_path desc format)
   "Function used for zotero links to export the link.
 
 PATH is the path of the link, the text after the prefix (like \"http:\")
@@ -187,27 +191,19 @@ FORMAT is the export format, a symbol like ‘html’ or ‘latex’ or ‘ascii
 
 (defvar org-zotxt--links-defined nil)
 
-;; We need to support org 9 and org 8, but this code will generate compiler
-;; warnings without this
-(with-no-warnings
-  (defun org-zotxt--define-links ()
-    "Set up the links for zotxt."
-    (when (not org-zotxt--links-defined)
-      (setq org-zotxt--links-defined t)
-      (if (functionp #'org-link-set-parameters)
-          (org-link-set-parameters "zotero"
-                                   :follow #'org-zotxt--link-follow
-                                   :export #'org-zotxt--link-export)
-        (org-add-link-type "zotero"
-                           #'org-zotxt--link-follow
-                           #'org-zotxt--link-export)))))
+(defun org-zotxt--define-links ()
+  "Set up the links for zotxt."
+  (unless org-zotxt--links-defined
+    (setq org-zotxt--links-defined t)
+    (org-link-set-parameters "zotero"
+                             :follow #'org-zotxt--link-follow
+                             :export #'org-zotxt--link-export)))
 
-(defvar org-zotxt-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c \" i") 'org-zotxt-insert-reference-link)
-    (define-key map (kbd "C-c \" u") 'org-zotxt-update-reference-link-at-point)
-    (define-key map (kbd "C-c \" a") 'org-zotxt-open-attachment)
-    map))
+(defvar-keymap org-zotxt-mode-map
+  :doc "Keymap for `org-zotxt-mode'."
+  "C-c \" i" #'org-zotxt-insert-reference-link
+  "C-c \" u" #'org-zotxt-update-reference-link-at-point
+  "C-c \" a" #'org-zotxt-open-attachment)
 
 (defun org-zotxt-choose-path (paths)
   "Prompt user to select a path from the PATHS.
@@ -230,7 +226,7 @@ Opens with `org-open-file', see for more information about ARG."
       (zotxt--request-deferred
        (format "%s/items" zotxt-url-base)
        :params `(("key" . ,item-id) ("format" . "paths"))
-       :parser 'json-read)
+       :parser #'zotxt--json-read)
       (deferred:nextc it
         (lambda (response)
           (let ((paths (cdr (assq 'paths (elt (request-response-data response) 0)))))

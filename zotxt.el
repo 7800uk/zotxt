@@ -4,8 +4,10 @@
 
 ;; Author: Erik Hetzner <egh@e6h.org>
 ;; Keywords: bib
-;; Version: 5.0.5
-;; Package-Requires: ((emacs "24.3") (deferred "0.5.1") (request "0.3.2"))
+;; Maintainer: Jacob Walchuk <git@7800.io>
+;; URL: https://gitlab.7800.io/7800uk/zotxt
+;; Version: 6.1.0
+;; Package-Requires: ((emacs "29.1") (deferred "0.5.1") (request "0.3.2"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -24,16 +26,31 @@
 
 ;;; Commentary:
 
+;; zotxt-emacs talks to a running Zotero through the zotxt addon: it
+;; inserts citekeys and completes them at point (`zotxt-citekey-mode'),
+;; and provides the library `org-zotxt' builds its links on.
+;;
+;; This is a fork of egh/zotxt-emacs, kept current with modern Emacs.
+;; `zotxt-altero' adds a consult menu of attachments and a mode that
+;; opens them from an altero server's storage over TRAMP.
+
 ;;; Code:
 
-(require 'cl-macs)
-(require 'json)
+(require 'cl-lib)
+(require 'subr-x)
 (require 'deferred)
 (require 'request)
 
-(defconst zotxt-url-base
+(defgroup zotxt nil
+  "Interface Emacs with Zotero via the zotxt extension."
+  :group 'external
+  :prefix "zotxt-")
+
+(defcustom zotxt-url-base
   "http://127.0.0.1:23119/zotxt"
-  "Base URL to contact.")
+  "Base URL of the zotxt endpoints of the running Zotero."
+  :group 'zotxt
+  :type 'string)
 
 (defconst zotxt-quicksearch-method-params
   '((:title-creator-year . "titleCreatorYear")
@@ -59,7 +76,9 @@
 
 (defcustom zotxt-default-bibliography-style
   "chicago-notes-bibliography"
-  "Default bibliography style to use. Should be named after the style file name, e.g. apa, ieee, chicago-notes-bibliography. Sorry, there should be a better way to get the name!"
+  "Default bibliography style to use.
+Should be named after the style file name, e.g. apa, ieee,
+chicago-notes-bibliography."
   :group 'zotxt
   :type '(string))
 
@@ -81,10 +100,11 @@ Creates a string like \"Hetzner et al. (2022)\"."
 		 (string :tag "Citation")))
 
 (defcustom zotxt-default-library :all
-  "Default library to search. :all for all libraries, :user for user library."
+  "Default library to search.
+:all for all libraries, :user for the user library."
   :group 'zotxt
   :type '(choice (const :tag "Search all libraries" :all)
-                 (const :tag "User library" :all)))
+                 (const :tag "User library" :user)))
 
 (defcustom zotxt-default-search-method nil
   "Default method to use for searching for items.
@@ -113,11 +133,16 @@ Runs in parallel using `deferred:parallel'."
          (mapcar func lst)))
 
 (defun zotxt--json-read ()
-  "UTF-8 aware `json-read'.
+  "Parse the JSON response in the current buffer, decoding it as UTF-8.
 
-request.el is not decoding our responses as UTF-8.  Recode text as UTF-8 and parse."
+request.el does not decode our responses as UTF-8, so the text is
+recoded before it is parsed.  Objects become alists with symbol keys
+and arrays become vectors, as `json-read' made them, but the parser
+is Emacs's own."
   (recode-region (point-min) (point-max) 'utf-8 'raw-text)
-  (json-read))
+  (goto-char (point-min))
+  (json-parse-buffer :object-type 'alist :array-type 'array
+                     :null-object nil :false-object :json-false))
 
 (defun zotxt-make-quick-bib-string (item)
   "Make a useful quick bibliography string from ITEM."
@@ -138,7 +163,8 @@ request.el is not decoding our responses as UTF-8.  Recode text as UTF-8 and par
       (format "0_%s" (match-string 1 id))))
 
 (defun zotxt--check-server ()
-  "Use the zotxt version endpoint to check if Zotero is running and zotxt is installed."
+  "Signal an error unless Zotero is running with zotxt installed.
+Asks the zotxt version endpoint."
   (let* ((response
           (request
             (format "%s/version" zotxt-url-base)
@@ -148,7 +174,10 @@ request.el is not decoding our responses as UTF-8.  Recode text as UTF-8 and par
       (error "Zotxt version endpoint not found; is Zotero running and zotxt installed?"))))
 
 (defun zotxt--request-deferred (url &rest args)
-  (let* ((d (deferred:new #'identity))
+  "Request URL with `request' ARGS and return a deferred object.
+The deferred is called back with the response on success and errored
+back with it on failure."
+  (let*((d (deferred:new #'identity))
          (callback-post (apply-partially
                          (lambda (d &rest args)
                            (deferred:callback-post
@@ -247,7 +276,7 @@ For use only in a `deferred:$' chain."
 				 "json"))
                   ("style" . ,style))
         :parser #'zotxt--json-read
-        :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+        :error (cl-function (lambda (&key error-thrown &allow-other-keys)
                               (deferred:errorback-post d error-thrown)))
         :success (cl-function
                   (lambda (&key data &allow-other-keys)
@@ -261,19 +290,15 @@ ITEM-ID appears to be the `<libraryId>_<key>' in the `items' table."
   (let* ((item `(:key ,item-id))
          (plist-key :full)
          (zotxt--json-formats (list plist-key)))
-    (->> (zotxt-get-item-deferred item plist-key)
-         (funcall (lambda (item)
-                    (deferred:error item #'zotxt--deferred-handle-error)))
-         deferred:sync!
-         (funcall (lambda (plist)
-                    (plist-get plist plist-key))))))
+    (plist-get (deferred:sync!
+                (deferred:error (zotxt-get-item-deferred item plist-key)
+                  #'zotxt--deferred-handle-error))
+               plist-key)))
 
 (defun zotxt-key-to-title (item-id)
   "Return the title of a paper identified by ITEM-ID."
-  (->> (zotxt-item-alist item-id)
-       (funcall (lambda (alist)
-                  (or (assoc 'title-short alist) (assoc 'title alist))))
-       cdr))
+  (let ((alist (zotxt-item-alist item-id)))
+    (cdr (or (assq 'title-short alist) (assq 'title alist)))))
 
 (defun zotxt-get-selected-items-deferred ()
   "Return the currently selected items in Zotero.
@@ -285,7 +310,7 @@ For use only in a `deferred:$' chain."
       :params '(("selected" . "selected")
                 ("format" . "key"))
       :parser #'zotxt--json-read
-      :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+      :error (cl-function (lambda (&key error-thrown &allow-other-keys)
                             (deferred:errorback-post d error-thrown)))
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
@@ -328,7 +353,7 @@ If SEARCH-STRING is supplied, it should be the search string."
                          nil))
                 ("format" . "quickBib"))
       :parser #'zotxt--json-read
-      :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+      :error (cl-function (lambda (&key error-thrown &allow-other-keys)
                             (deferred:errorback-post d error-thrown)))
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
@@ -378,11 +403,10 @@ method will have to be selected even if
 (defvar zotxt-citekey-regex
   "[@{]\\([[:alnum:]:]+\\)")
 
-(defvar zotxt-citekey-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c \" o") 'zotxt-citekey-select-item-at-point)
-    (define-key map (kbd "C-c \" k") 'zotxt-citekey-insert)
-    map))
+(defvar-keymap zotxt-citekey-mode-map
+  :doc "Keymap for `zotxt-citekey-mode'."
+  "C-c \" o" #'zotxt-citekey-select-item-at-point
+  "C-c \" k" #'zotxt-citekey-insert)
 
 (defun zotxt-citekey-at-point-match ()
   "Match an citekey at point."
@@ -443,7 +467,7 @@ For use only in a `deferred:$' chain."
       :parser (if (member format zotxt--json-formats)
                   #'zotxt--json-read
                 #'buffer-string)
-      :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+      :error (cl-function (lambda (&key error-thrown &allow-other-keys)
                             (deferred:errorback-post d error-thrown)))
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
@@ -501,12 +525,10 @@ including completion."
   :lighter " ZotCitekey"
   :keymap zotxt-citekey-mode-map
   (if zotxt-citekey-mode
-      (setq-local completion-at-point-functions
-                  (cons 'zotxt-citekey-complete-at-point
-                        completion-at-point-functions))
-    (setq-local completion-at-point-functions
-                (remove 'zotxt-citekey-complete-at-point
-                        completion-at-point-functions))))
+      (add-hook 'completion-at-point-functions
+                #'zotxt-citekey-complete-at-point nil t)
+    (remove-hook 'completion-at-point-functions
+                 #'zotxt-citekey-complete-at-point t)))
 
 ;;;###autoload
 (define-obsolete-function-alias 'zotxt-easykey-mode #'zotxt-citekey-mode "6.0")
